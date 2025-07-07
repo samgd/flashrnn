@@ -37,7 +37,9 @@ __global__ void FLASHRNNPointwiseForward(
     const uint s_out_stride,
     FLASHRNN_DTYPE_G *g_r_out, // Output vector v (Wx + Ry + b) (only
                                // used if autoraining==true)
-    FLASHRNN_DTYPE_G *g_i_out) {
+    FLASHRNN_DTYPE_G *g_i_out,
+    const FLASHRNN_DTYPE_B *ln_weight, // Layer norm weight (unused in Elman, can be nullptr)
+    const FLASHRNN_DTYPE_B *ln_bias) { // Layer norm bias (unused in Elman, can be nullptr)
 
   // We're in column-major order here, so increase x => increase row.
   const int row = blockDim.x * blockIdx.x + threadIdx.x; // hidden
@@ -86,7 +88,11 @@ __global__ void FLASHRNNPointwiseBackward(
     const FLASHRNN_DTYPE_S *ds_new, const uint ds_new_stride,
     FLASHRNN_DTYPE_S *ds_inout, const uint ds_inout_stride,
     FLASHRNN_DTYPE_G *dg_r_out, FLASHRNN_DTYPE_G *dg_i_out,
-    FLASHRNN_DTYPE_G *dg_b_out) {
+    FLASHRNN_DTYPE_G *dg_b_out,
+    const FLASHRNN_DTYPE_B *ln_weight, // Layer norm weight (unused in Elman, can be nullptr)
+    const FLASHRNN_DTYPE_B *ln_bias,   // Layer norm bias (unused in Elman, can be nullptr)
+    FLASHRNN_DTYPE_B *dln_weight,      // Layer norm weight gradients (unused in Elman, can be nullptr)
+    FLASHRNN_DTYPE_B *dln_bias) {      // Layer norm bias gradients (unused in Elman, can be nullptr)
   const int row = blockDim.x * blockIdx.x + threadIdx.x; // hidden
   const int col = blockDim.y * blockIdx.y + threadIdx.y; // batch
   const int head_dim = hidden_dim / num_heads;
