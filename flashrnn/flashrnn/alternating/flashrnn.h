@@ -212,7 +212,11 @@ public:
               const FLASHRNN_DTYPE_S *s_new, const FLASHRNN_DTYPE_S *ds_new,
               FLASHRNN_DTYPE_R *dR, FLASHRNN_DTYPE_B *db, FLASHRNN_DTYPE_S *ds,
               FLASHRNN_DTYPE_G *g_r, FLASHRNN_DTYPE_G *g_i,
-              FLASHRNN_DTYPE_G *g_b);
+              FLASHRNN_DTYPE_G *g_b,
+              const FLASHRNN_DTYPE_B *ln_weight = nullptr, // Layer norm weight
+              const FLASHRNN_DTYPE_B *ln_bias = nullptr,   // Layer norm bias
+              FLASHRNN_DTYPE_B *dln_weight = nullptr,      // Layer norm weight gradients
+              FLASHRNN_DTYPE_B *dln_bias = nullptr);       // Layer norm bias gradients
 
   // Runs the LSTM backward pass over all time steps. This method is faster than
   // using a per-step `Iterate` but requires that the entire input sequence be
@@ -255,7 +259,11 @@ private:
                       const FLASHRNN_DTYPE_S *ds_new, const uint ds_new_stride,
                       FLASHRNN_DTYPE_S *ds, const uint ds_stride,
                       FLASHRNN_DTYPE_G *g_r, FLASHRNN_DTYPE_G *g_i,
-                      FLASHRNN_DTYPE_G *g_b);
+                      FLASHRNN_DTYPE_G *g_b,
+                      const FLASHRNN_DTYPE_B *ln_weight = nullptr, // Layer norm weight
+                      const FLASHRNN_DTYPE_B *ln_bias = nullptr,   // Layer norm bias
+                      FLASHRNN_DTYPE_B *dln_weight = nullptr,      // Layer norm weight gradients
+                      FLASHRNN_DTYPE_B *dln_bias = nullptr);       // Layer norm bias gradients
   struct private_data;
   private_data *data_;
 };
