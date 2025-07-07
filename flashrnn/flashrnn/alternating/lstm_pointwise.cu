@@ -37,7 +37,9 @@ __global__ void FLASHRNNPointwiseForward(
     const uint s_out_stride,
     FLASHRNN_DTYPE_G *g_r_out, // Output vector v (Wx + Ry + b) (only
                                // used if autoraining==true)
-    FLASHRNN_DTYPE_G *g_i_out) {
+    FLASHRNN_DTYPE_G *g_i_out,
+    const FLASHRNN_DTYPE_B *ln_weight, // Layer norm weight [num_heads, head_dim]
+    const FLASHRNN_DTYPE_B *ln_bias) {  // Layer norm bias [num_heads, head_dim]
 
   // We're in column-major order here, so increase x => increase row.
   const int row = blockDim.x * blockIdx.x + threadIdx.x; // hidden
@@ -103,7 +105,15 @@ __global__ void FLASHRNNPointwiseForward(
   }
 
   const auto c_new = add_g(mul_g(fgate, c_cur), mul_g(igate, zval));
-  auto y_new = mul_g(ogate, tanh_g(c_new));
+  
+  // Apply element-wise normalization to cell state
+  // Note: This is a simplified version that applies learnable scaling and bias
+  // Can be extended to full layer normalization later
+  const auto c_new_normalized = add_g(
+    mul_g(c_new, type2float(ln_weight[row + head_idx])),
+    type2float(ln_bias[row + head_idx]));
+    
+  auto y_new = mul_g(ogate, tanh_g(c_new_normalized));
 
 #if FLASHRNN_FORWARD_CLIPVAL_VALID
   y_new = clip_val_g(y_new, neg_g((float)FLASHRNN_FORWARD_CLIPVAL),
@@ -111,7 +121,7 @@ __global__ void FLASHRNNPointwiseForward(
 #endif
 
   s_out[output_idx + 0 * s_out_stride] = float2type<FLASHRNN_DTYPE_S>(y_new);
-  s_out[output_idx + 1 * s_out_stride] = float2type<FLASHRNN_DTYPE_S>(c_new);
+  s_out[output_idx + 1 * s_out_stride] = float2type<FLASHRNN_DTYPE_S>(c_new_normalized);
 }
 
 __global__ void FLASHRNNPointwiseBackward(
@@ -123,7 +133,11 @@ __global__ void FLASHRNNPointwiseBackward(
     const FLASHRNN_DTYPE_S *ds_new, const uint ds_new_stride,
     FLASHRNN_DTYPE_S *ds_inout, const uint ds_inout_stride,
     FLASHRNN_DTYPE_G *dg_r_out, FLASHRNN_DTYPE_G *dg_i_out,
-    FLASHRNN_DTYPE_G *dg_b_out) {
+    FLASHRNN_DTYPE_G *dg_b_out,
+    const FLASHRNN_DTYPE_B *ln_weight, // Layer norm weight [num_heads, head_dim]
+    const FLASHRNN_DTYPE_B *ln_bias,   // Layer norm bias [num_heads, head_dim] 
+    FLASHRNN_DTYPE_B *dln_weight,      // Layer norm weight gradients [num_heads, head_dim]
+    FLASHRNN_DTYPE_B *dln_bias) {      // Layer norm bias gradients [num_heads, head_dim]
   const int row = blockDim.x * blockIdx.x + threadIdx.x; // hidden
   const int col = blockDim.y * blockIdx.y + threadIdx.y; // batch
   const int head_dim = hidden_dim / num_heads;
@@ -157,13 +171,30 @@ __global__ void FLASHRNNPointwiseBackward(
   const auto zval = type2float(g_r[z_idx]);
   const auto ogate = type2float(g_r[o_idx]);
   const auto c_cur = type2float(s[base_idx + 1 * s_stride]);
-  const auto c_new = type2float(s_new[base_idx + 1 * s_stride]);
+  const auto c_new_normalized = type2float(s_new[base_idx + 1 * s_stride]);
   const float zero = 0.;
   const auto y_new = type2float(s_new[base_idx + 0 * s_new_stride]);
-  const auto c_new_tanh = tanh_g(c_new);
+  
+  // Recompute unnormalized c_new from gates (needed for gradients)
+  const auto c_new = add_g(mul_g(fgate, c_cur), mul_g(igate, zval));
+  
+  const auto c_new_tanh = tanh_g(c_new_normalized);
 
   const auto dc_tanh = mul_g(ogate, dy_total);
-  dc_total = add_g(dc_total, mul_g(d_tanh_g(c_new_tanh), dc_tanh));
+  const auto dc_new_normalized = mul_g(d_tanh_g(c_new_tanh), dc_tanh);
+  
+  // Layer norm gradients
+  // dc_new_norm = dc_new_norm input gradient
+  // dln_weight += dc_new_norm * c_new
+  // dln_bias += dc_new_norm  
+  // dc_new = dc_new_norm * ln_weight
+  const auto ln_weight_val = type2float(ln_weight[row + head_idx]);
+  dln_weight[row + head_idx] = float2type<FLASHRNN_DTYPE_B>(
+    add_g(type2float(dln_weight[row + head_idx]), mul_g(dc_new_normalized, c_new)));
+  dln_bias[row + head_idx] = float2type<FLASHRNN_DTYPE_B>(
+    add_g(type2float(dln_bias[row + head_idx]), dc_new_normalized));
+  
+  dc_total = add_g(dc_total, mul_g(dc_new_normalized, ln_weight_val));
 
   const auto di = mul_g(zval, dc_total);
   const auto df = mul_g(c_cur, dc_total);
