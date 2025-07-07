@@ -111,7 +111,9 @@ int ForwardPass::Iterate(
     FLASHRNN_DTYPE_S *s_out,   // Output recurrent state [N,H]
     FLASHRNN_DTYPE_G *g_r,     // Input vector and storage
     FLASHRNN_DTYPE_G *g_i,     // Input vector and storage
-    FLASHRNN_DTYPE_G *tmp_Ry) { // Temporary storage for Ry vector [N,H*4]
+    FLASHRNN_DTYPE_G *tmp_Ry,  // Temporary storage for Ry vector [N,H*4]
+    const FLASHRNN_DTYPE_B *ln_weight, // Layer norm weight (optional)
+    const FLASHRNN_DTYPE_B *ln_bias) {  // Layer norm bias (optional)
   // Constants for GEMM
   static const FLASHRNN_DTYPE_G alpha = scalar_one<FLASHRNN_DTYPE_G>();
   static const FLASHRNN_DTYPE_G beta = scalar_zero<FLASHRNN_DTYPE_G>();
@@ -130,7 +132,8 @@ int ForwardPass::Iterate(
   auto err = cudaPeekAtLastError();
 
   int res = IterateInternal(x, R, b, s, batch_size * hidden_size, s_out,
-                            batch_size * hidden_size, g_r, g_i, tmp_Ry);
+                            batch_size * hidden_size, g_r, g_i, tmp_Ry, 
+                            ln_weight, ln_bias);
 
   // Make sure outputs have settled.
   if (stream) {
@@ -157,7 +160,9 @@ int ForwardPass::IterateInternal(
     const uint s_out_stride,
     FLASHRNN_DTYPE_G *g_r,      // Output vector (Wx + Ry + b) [B,H*G] ?
     FLASHRNN_DTYPE_G *g_i,      // Output vector (Wx + Ry + b) [B,H*G] ?
-    FLASHRNN_DTYPE_G *tmp_Ry) { // Temporary storage for Ry vector [B,H*G]
+    FLASHRNN_DTYPE_G *tmp_Ry,   // Temporary storage for Ry vector [B,H*G]
+    const FLASHRNN_DTYPE_B *ln_weight, // Layer norm weight (optional)
+    const FLASHRNN_DTYPE_B *ln_bias) {  // Layer norm bias (optional)
   static const FLASHRNN_DTYPE_G alpha = scalar_one<FLASHRNN_DTYPE_G>();
   static const FLASHRNN_DTYPE_G beta = scalar_zero<FLASHRNN_DTYPE_G>();
 
@@ -197,13 +202,13 @@ int ForwardPass::IterateInternal(
                        (batch_size + blockDim.y - 1) / blockDim.y, num_heads);
     FLASHRNNPointwiseForward<true><<<gridDim, blockDim, 0, stream_R>>>(
         batch_size, hidden_size, num_heads, x, tmp_Ry, b, s, s_stride, s_out,
-        s_out_stride, g_r, g_i);
+        s_out_stride, g_r, g_i, ln_weight, ln_bias);
   } else {
     const dim3 gridDim((head_dim + blockDim.x - 1) / blockDim.x,
                        (batch_size + blockDim.y - 1) / blockDim.y, num_heads);
     FLASHRNNPointwiseForward<false><<<gridDim, blockDim, 0, stream_R>>>(
         batch_size, hidden_size, num_heads, x, tmp_Ry, b, s, s_stride, s_out,
-        s_out_stride, nullptr, nullptr);
+        s_out_stride, nullptr, nullptr, ln_weight, ln_bias);
   }
 
   auto err = cudaPeekAtLastError();

@@ -98,7 +98,9 @@ public:
               const FLASHRNN_DTYPE_B *b, const FLASHRNN_DTYPE_W *x,
               const FLASHRNN_DTYPE_S *s, FLASHRNN_DTYPE_S *s_out,
               FLASHRNN_DTYPE_G *g_r, FLASHRNN_DTYPE_G *g_i,
-              FLASHRNN_DTYPE_G *tmp_Ry);
+              FLASHRNN_DTYPE_G *tmp_Ry,
+              const FLASHRNN_DTYPE_B *ln_weight = nullptr, // Layer norm weight [num_heads, head_dim]
+              const FLASHRNN_DTYPE_B *ln_bias = nullptr);  // Layer norm bias [num_heads, head_dim]
 
   // Runs the LSTM over all time steps. This method is faster than using a
   // per-step `Iterate` but requires that the entire input sequence be available
@@ -138,7 +140,9 @@ private:
                       const FLASHRNN_DTYPE_B *b, const FLASHRNN_DTYPE_S *s,
                       const uint s_stride, FLASHRNN_DTYPE_S *s_out,
                       const uint s_out_stride, FLASHRNN_DTYPE_G *g_r,
-                      FLASHRNN_DTYPE_G *g_i, FLASHRNN_DTYPE_G *tmp_Ry);
+                      FLASHRNN_DTYPE_G *g_i, FLASHRNN_DTYPE_G *tmp_Ry,
+                      const FLASHRNN_DTYPE_B *ln_weight = nullptr, // Layer norm weight
+                      const FLASHRNN_DTYPE_B *ln_bias = nullptr);  // Layer norm bias
 
   struct private_data;
   private_data *data_;
